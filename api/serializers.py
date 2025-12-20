@@ -32,9 +32,9 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             'id', 'name', 'category', 'price', 'specs', 
-            'warranty', 'images', 'image_urls', 'created_at', 'updated_at'
+            'warranty', 'images', 'image_urls', 'created_at', 'updated_at', 'creator', 'trending'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'images']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'images', 'creator']
     
     def get_image_urls(self, obj):
         """Get list of image URLs."""

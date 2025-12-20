@@ -10,17 +10,20 @@ class ProductImageInline(admin.TabularInline):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ['name', 'category', 'price', 'warranty', 'created_at']
-    list_filter = ['category', 'created_at']
+    list_display = ['name', 'category', 'price', 'warranty', 'trending', 'creator', 'created_at']
+    list_filter = ['category', 'trending', 'created_at', 'creator']
     search_fields = ['name']
     readonly_fields = ['id', 'created_at', 'updated_at']
     inlines = [ProductImageInline]
     fieldsets = (
         ('Basic Information', {
-            'fields': ('name', 'category', 'price', 'warranty')
+            'fields': ('name', 'category', 'price', 'warranty', 'trending')
         }),
         ('Specifications', {
             'fields': ('specs',)
+        }),
+        ('Product Creator', {
+            'fields': ('creator',)
         }),
         ('Metadata', {
             'fields': ('id', 'created_at', 'updated_at')

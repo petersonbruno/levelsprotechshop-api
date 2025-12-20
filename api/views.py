@@ -1,7 +1,11 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import api_view, action
+from rest_framework.decorators import api_view, action, permission_classes
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.core.paginator import Paginator
+from django.contrib.auth import authenticate
+from django.contrib.auth.models import User
+from rest_framework.authtoken.models import Token
 from .models import Product, ProductImage
 from .serializers import ProductSerializer, ProductCreateSerializer, ProductImageSerializer
 from .utils import success_response, error_response, validate_image_file
@@ -17,6 +21,12 @@ class ProductViewSet(viewsets.ModelViewSet):
     """
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
+    
+    def get_permissions(self):
+        """Require authentication for create, update, and delete operations."""
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'delete_image']:
+            return [IsAuthenticated()]
+        return [AllowAny()]
     
     def get_serializer_class(self):
         """Use different serializer for create/update operations."""
@@ -37,6 +47,13 @@ class ProductViewSet(viewsets.ModelViewSet):
         search = self.request.query_params.get('search', None)
         if search:
             queryset = queryset.filter(name__icontains=search)
+        
+        # Filter by trending
+        trending = self.request.query_params.get('trending', None)
+        if trending is not None:
+            # Accept 'true', 'True', '1', 'yes', 'on' as True, anything else as False
+            trending_bool = trending.lower() in ('true', '1', 'yes', 'on')
+            queryset = queryset.filter(trending=trending_bool)
         
         # Sorting
         sort_by = self.request.query_params.get('sort', None)
@@ -154,8 +171,8 @@ class ProductViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             
-            # Handle file uploads (multipart/form-data)
-            product = serializer.save()
+            # Set creator to the authenticated user
+            product = serializer.save(creator=request.user)
             
             # Handle image file uploads
             if 'images' in request.FILES:
@@ -368,5 +385,155 @@ def health_check(request):
         data={'status': 'healthy'},
         message="API is running successfully"
     )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def login(request):
+    """Simple login API with username and password."""
+    try:
+        username = request.data.get('username')
+        password = request.data.get('password')
+        
+        if not username or not password:
+            return error_response(
+                "Username and password are required",
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Authenticate user
+        user = authenticate(username=username, password=password)
+        
+        if user is None:
+            return error_response(
+                "Invalid username or password",
+                status_code=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        # Get or create token for the user
+        token, created = Token.objects.get_or_create(user=user)
+        
+        return success_response(
+            data={
+                'token': token.key,
+                'user_id': user.id,
+                'username': user.username,
+                'email': user.email if hasattr(user, 'email') else None
+            },
+            message="Login successful"
+        )
+    except Exception as e:
+        logger.error(f"Error during login: {str(e)}")
+        return error_response(
+            "Failed to login",
+            details=str(e),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+def _extract_price_value(price_str):
+    """Extract numeric value from price string for sorting."""
+    try:
+        # Remove 'TZS' and commas, then convert to float
+        numeric_str = price_str.replace('TZS', '').replace(',', '').strip()
+        return float(numeric_str)
+    except:
+        return 0.0
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def dashboard(request):
+    """Dashboard endpoint for product creators to view their products."""
+    try:
+        user = request.user
+        
+        # Get all products created by the user
+        queryset = Product.objects.filter(creator=user)
+        
+        # Apply filtering, search, and sorting (similar to ProductViewSet)
+        category = request.query_params.get('category', None)
+        if category:
+            queryset = queryset.filter(category=category)
+        
+        search = request.query_params.get('search', None)
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+        
+        # Filter by trending
+        trending = request.query_params.get('trending', None)
+        if trending is not None:
+            # Accept 'true', 'True', '1', 'yes', 'on' as True, anything else as False
+            trending_bool = trending.lower() in ('true', '1', 'yes', 'on')
+            queryset = queryset.filter(trending=trending_bool)
+        
+        sort_by = request.query_params.get('sort', None)
+        if sort_by:
+            if sort_by == 'name':
+                queryset = queryset.order_by('name')
+            elif sort_by == '-name':
+                queryset = queryset.order_by('-name')
+            elif sort_by == 'price':
+                queryset = list(queryset)
+                queryset.sort(key=lambda p: _extract_price_value(p.price))
+            elif sort_by == '-price':
+                queryset = list(queryset)
+                queryset.sort(key=lambda p: _extract_price_value(p.price), reverse=True)
+            elif sort_by == 'date':
+                queryset = queryset.order_by('created_at')
+            elif sort_by == '-date':
+                queryset = queryset.order_by('-created_at')
+        else:
+            queryset = queryset.order_by('-created_at')
+        
+        # Pagination
+        limit = int(request.query_params.get('limit', 20))
+        offset = int(request.query_params.get('offset', 0))
+        
+        if limit < 1 or limit > 100:
+            limit = 20
+        if offset < 0:
+            offset = 0
+        
+        is_list = isinstance(queryset, list)
+        
+        if is_list:
+            total_count = len(queryset)
+            start = offset
+            end = offset + limit
+            paginated_items = queryset[start:end]
+            total_pages = (total_count + limit - 1) // limit if limit > 0 else 1
+        else:
+            paginator = Paginator(queryset, limit)
+            page_number = (offset // limit) + 1
+            page_obj = paginator.get_page(page_number)
+            paginated_items = page_obj
+            total_count = paginator.count
+            total_pages = paginator.num_pages
+        
+        serializer = ProductSerializer(paginated_items, many=True, context={'request': request})
+        
+        return success_response(
+            data={
+                'products': serializer.data,
+                'count': total_count,
+                'limit': limit,
+                'offset': offset,
+                'total_pages': total_pages,
+                'creator': {
+                    'id': user.id,
+                    'username': user.username,
+                    'email': user.email if hasattr(user, 'email') else None
+                }
+            },
+            message="Dashboard data retrieved successfully"
+        )
+    except Exception as e:
+        logger.error(f"Error retrieving dashboard: {str(e)}")
+        return error_response(
+            "Failed to retrieve dashboard data",
+            details=str(e),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 

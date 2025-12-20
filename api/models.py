@@ -1,5 +1,6 @@
 from django.db import models
 from django.core.validators import MinLengthValidator, MaxLengthValidator
+from django.contrib.auth.models import User
 import uuid
 
 
@@ -19,6 +20,7 @@ class Product(BaseModel):
         ('Desktops', 'Desktops'),
         ('Gaming PCs', 'Gaming PCs'),
         ('Accessories', 'Accessories'),
+        
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -45,6 +47,18 @@ class Product(BaseModel):
         default="3 Months",
         help_text="Warranty period"
     )
+    creator = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_products',
+        help_text="User who created this product"
+    )
+    trending = models.BooleanField(
+        default=False,
+        help_text="Whether this product is marked as trending"
+    )
 
     class Meta:
         ordering = ['-created_at']
@@ -52,6 +66,8 @@ class Product(BaseModel):
             models.Index(fields=['category']),
             models.Index(fields=['name']),
             models.Index(fields=['created_at']),
+            models.Index(fields=['creator']),
+            models.Index(fields=['trending']),
         ]
 
     def __str__(self):
