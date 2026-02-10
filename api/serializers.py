@@ -59,9 +59,12 @@ class ProductSerializer(serializers.ModelSerializer):
     def validate_category(self, value):
         """Validate category."""
         if not validate_category(value):
-            raise serializers.ValidationError(
-                "Category must be one of: Laptops, Desktops, Gaming PCs, Accessories, Electronics, Phone"
-            )
+            # Build dynamic list from Product model choices when possible
+            try:
+                allowed = ', '.join([c[0] for c in Product.CATEGORY_CHOICES])
+            except Exception:
+                allowed = 'Laptops, Desktops, Gaming PCs, Accessories, Electronics, Phone'
+            raise serializers.ValidationError(f"Category must be one of: {allowed}")
         return value
     
     def validate_price(self, value):

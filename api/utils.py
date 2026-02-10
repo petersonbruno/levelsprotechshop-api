@@ -72,9 +72,43 @@ def validate_price_format(price):
 
 
 def validate_category(category):
-    """Validate category is one of the allowed values."""
-    valid_categories = ['Laptops', 'Desktops', 'Gaming PCs', 'Accessories']
-    return category in valid_categories
+    """Validate category is one of the allowed values.
+
+    This derives allowed values from the Product model choices when
+    possible, performs a case-insensitive match and accepts common
+    variants like plural forms and simple 'phone'/'mobile' matches.
+    """
+    if not category:
+        return False
+
+    # Try to derive allowed categories from the Product model
+    try:
+        from .models import Product
+        valid_categories = [c[0] for c in Product.CATEGORY_CHOICES]
+    except Exception:
+        valid_categories = ['Laptops', 'Desktops', 'Gaming PCs', 'Accessories', 'Electronics', 'Phone']
+
+    cat_norm = str(category).strip()
+
+    # Direct case-insensitive match
+    for v in valid_categories:
+        if cat_norm.lower() == v.lower():
+            return True
+
+    # Accept simple plural forms (e.g. 'Phones' -> 'Phone')
+    if cat_norm.endswith('s') or cat_norm.endswith('S'):
+        singular = cat_norm[:-1]
+        for v in valid_categories:
+            if singular.lower() == v.lower():
+                return True
+
+    # Accept mentions of phone/mobile as phone category
+    if 'phone' in cat_norm.lower() or 'mobile' in cat_norm.lower():
+        for v in valid_categories:
+            if v.lower() == 'phone':
+                return True
+
+    return False
 
 
 def base64_to_image(base64_string, filename='image.png'):
