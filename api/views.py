@@ -90,50 +90,51 @@ class ProductViewSet(viewsets.ModelViewSet):
             return 0.0
     
     def list(self, request, *args, **kwargs):
+        """List all products with pagination."""
         try:
             queryset = self.get_queryset()
-
-            category = request.query_params.get('category')
-
-            # 🔹 If category is provided → return ALL products (no pagination)
-            if category:
-                queryset = queryset.filter(category_id=category)
-                serializer = self.get_serializer(queryset, many=True)
-
-                return success_response(
-                    data={
-                        'products': serializer.data,
-                        'count': queryset.count()
-                    },
-                    message="Category products retrieved successfully"
-                )
-
-            # 🔹 Normal pagination (no category)
-            limit = int(request.query_params.get('limit', 20))
+            
+            # Check if queryset is a list (for price sorting)
+            is_list = isinstance(queryset, list)
+            
+            # Pagination
+            limit = int(request.query_params.get('limit', 100))
             offset = int(request.query_params.get('offset', 0))
-
+            
+            # Validate pagination params
             if limit < 1 or limit > 100:
-                limit = 20
+                limit = 100
             if offset < 0:
                 offset = 0
-
-            paginator = Paginator(queryset, limit)
-            page_number = (offset // limit) + 1
-            page_obj = paginator.get_page(page_number)
-
-            serializer = self.get_serializer(page_obj, many=True)
-
+            
+            if is_list:
+                # Manual pagination for list
+                total_count = len(queryset)
+                start = offset
+                end = offset + limit
+                paginated_items = queryset[start:end]
+                total_pages = (total_count + limit - 1) // limit if limit > 0 else 1
+            else:
+                # Django pagination for queryset
+                paginator = Paginator(queryset, limit)
+                page_number = (offset // limit) + 1
+                page_obj = paginator.get_page(page_number)
+                paginated_items = page_obj
+                total_count = paginator.count
+                total_pages = paginator.num_pages
+            
+            serializer = self.get_serializer(paginated_items, many=True)
+            
             return success_response(
                 data={
                     'products': serializer.data,
-                    'count': paginator.count,
+                    'count': total_count,
                     'limit': limit,
                     'offset': offset,
-                    'total_pages': paginator.num_pages
+                    'total_pages': total_pages
                 },
                 message="Products retrieved successfully"
             )
-
         except Exception as e:
             logger.error(f"Error listing products: {str(e)}")
             return error_response(
@@ -141,7 +142,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                 details=str(e),
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
+    
     def retrieve(self, request, *args, **kwargs):
         """Get a single product by ID."""
         try:
