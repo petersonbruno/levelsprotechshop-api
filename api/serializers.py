@@ -60,7 +60,7 @@ class ProductSerializer(serializers.ModelSerializer):
         """Validate category."""
         if not validate_category(value):
             raise serializers.ValidationError(
-                "Category must be one of: Laptops, Desktops, Gaming PCs, Accessories"
+                "Category must be one of: Laptops, Desktops, Gaming PCs, Accessories, Electronics, Phone"
             )
         return value
     
