@@ -20,6 +20,8 @@ class Product(BaseModel):
         ('Desktops', 'Desktops'),
         ('Gaming PCs', 'Gaming PCs'),
         ('Accessories', 'Accessories'),
+        ('Electronics', 'Electronics'),
+        ('Phone', 'Phone'),
         
     ]
     
